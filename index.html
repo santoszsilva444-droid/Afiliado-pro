@@ -94,7 +94,7 @@ async function init() {
 }
 async function buy(id) {
   try {
-    const r = await call("create-pix", { package_id: id });
+    const r = await call("swift-worker", { package_id: id });
     $("qr").classList.remove("hide"); $("qrimg").src = "data:image/png;base64," + r.qr_code_base64; $("code").value = r.qr_code; $("qrstat").textContent = "Aguardando confirmação do pagamento…";
     const before = $("bal").textContent; let n = 0; clearInterval(poll);
     poll = setInterval(async () => { await refresh(); n++; if ($("bal").textContent !== before) { $("qrstat").textContent = "Pagamento confirmado. Créditos liberados."; clearInterval(poll); } else if (n > 120) clearInterval(poll); }, 5000);
