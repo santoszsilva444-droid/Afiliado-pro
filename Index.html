@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Afiliado Pro</title>
+<style>
+:root{--bg:#f4f5fb;--card:#fff;--ink:#1a1d2e;--mut:#5b6075;--ac:#4338ca;--acink:#fff;--line:#dfe1ee;--err:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#12141f;--card:#1b1e2e;--ink:#eceefb;--mut:#a3a8c3;--ac:#8b85ff;--acink:#12141f;--line:#2c3047;--err:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:0}h2{font-size:1.1rem;margin:0 0 8px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+button{font:inherit;background:var(--ac);color:var(--acink);border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+button:disabled{opacity:.5}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+select,textarea{width:100%;font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+textarea{min-height:120px;margin:8px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.bar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mut{color:var(--mut);font-size:.9rem}.err{color:var(--err)}#out{white-space:pre-wrap;word-break:break-word}
+#qr img{width:220px;max-width:100%;background:#fff;padding:6px;border-radius:8px}#code{width:100%;font-size:.8rem}
+li{margin:4px 0}ul{padding-left:18px;margin:0}.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+  <div class="bar"><h1>Afiliado Pro</h1><button id="logout" class="ghost hide">Sair</button></div>
+
+  <section id="login">
+    <h2>Entre para começar</h2>
+    <p class="mut">Ferramentas de texto para afiliados. Você paga por créditos via Pix.</p>
+    <button id="google">Entrar com Google</button>
+  </section>
+
+  <div id="app" class="hide">
+    <section><div class="bar"><h2>Seu saldo</h2><strong id="bal">…</strong></div>
+      <p class="mut" id="costs"></p></section>
+
+    <section><h2>Comprar créditos</h2><div class="row" id="pkgs"></div>
+      <div id="qr" class="hide"><p>Pague o Pix abaixo. Os créditos entram sozinhos quando o Mercado Pago confirmar.</p>
+        <img id="qrimg" alt="QR Code Pix"><textarea id="code" readonly rows="3"></textarea>
+        <button id="copy" class="ghost">Copiar código Pix</button><p class="mut" id="qrstat"></p></div></section>
+
+    <section><h2>Criar conteúdo</h2>
+      <select id="tool" aria-label="Ferramenta">
+        <option value="profile">Otimizador de perfil</option>
+        <option value="video_script">Roteiro e prompt de vídeo (para o Google Flow)</option>
+        <option value="captions">Legendas, hashtags e horários</option>
+      </select>
+      <textarea id="input" placeholder="Plataforma, nicho, público, produto, nome e bio atuais…"></textarea>
+      <button id="run">Gerar</button> <span class="mut" id="runstat"></span>
+      <div id="out"></div>
+      <div class="row hide" id="flow"><button id="copyout" class="ghost">Copiar texto</button><button id="openflow" class="ghost">Abrir Google Flow</button></div>
+      <p class="mut">As sugestões são pontos de partida, não garantem aprovação, alcance ou vendas. O vídeo é gerado no Google Flow, com a conta e as regras do próprio Google.</p>
+    </section>
+
+    <section><h2>Movimentações</h2><ul id="hist"></ul></section>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// === CONFIGURAÇÃO (valores públicos; NUNCA coloque o Access Token aqui) ===
+const SUPABASE_URL = "COLE_AQUI_A_URL_DO_PROJETO";
+const SUPABASE_ANON_KEY = "COLE_AQUI_A_ANON_KEY";
+const FLOW_URL = "https://labs.google/flow/about"; // confirme o endereço atual
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+const money = (n) => Number(n).toFixed(2).replace(".", ",");
+let poll;
+
+async function call(fn, body) {
+  const { data, error } = await sb.functions.invoke(fn, { body });
+  if (error) { let m = "Algo deu errado."; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  return data;
+}
+async function refresh() {
+  const { data: w } = await sb.from("wallets").select("balance").maybeSingle();
+  $("bal").textContent = (w ? money(w.balance) : "0,00") + " créditos";
+  const { data: tx } = await sb.from("credit_transactions").select("*").order("id", { ascending: false }).limit(15);
+  $("hist").innerHTML = "";
+  const names = { purchase: "Compra", spend: "Uso", refund: "Estorno", adjust: "Ajuste" };
+  (tx || []).forEach((t) => { const li = document.createElement("li"); li.textContent = `${new Date(t.created_at).toLocaleString("pt-BR")} — ${names[t.kind]} ${t.amount > 0 ? "+" : ""}${money(t.amount)}`; $("hist").append(li); });
+}
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  $("login").classList.toggle("hide", !!session); $("app").classList.toggle("hide", !session); $("logout").classList.toggle("hide", !session);
+  if (!session) return;
+  const { data: pk } = await sb.from("packages").select("*").order("price");
+  $("pkgs").innerHTML = "";
+  (pk || []).forEach((p) => { const b = document.createElement("button"); b.textContent = `${p.name}: ${p.credits} créditos por R$ ${money(p.price)}`; b.onclick = () => buy(p.id); $("pkgs").append(b); });
+  const { data: tc } = await sb.from("tool_costs").select("*");
+  $("costs").textContent = "Custo por uso: " + (tc || []).map((t) => `${{ profile: "perfil", video_script: "roteiro", captions: "legendas" }[t.tool]} ${money(t.cost)}`).join(" · ") + " crédito(s).";
+  refresh();
+}
+async function buy(id) {
+  try {
+    const r = await call("create-pix", { package_id: id });
+    $("qr").classList.remove("hide"); $("qrimg").src = "data:image/png;base64," + r.qr_code_base64; $("code").value = r.qr_code; $("qrstat").textContent = "Aguardando confirmação do pagamento…";
+    const before = $("bal").textContent; let n = 0; clearInterval(poll);
+    poll = setInterval(async () => { await refresh(); n++; if ($("bal").textContent !== before) { $("qrstat").textContent = "Pagamento confirmado. Créditos liberados."; clearInterval(poll); } else if (n > 120) clearInterval(poll); }, 5000);
+  } catch (e) { $("qrstat").textContent = e.message; $("qr").classList.remove("hide"); }
+}
+$("copy").onclick = () => navigator.clipboard.writeText($("code").value);
+$("google").onclick = () => sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+$("logout").onclick = async () => { await sb.auth.signOut(); init(); };
+$("run").onclick = async () => {
+  $("run").disabled = true; $("runstat").textContent = "Gerando…"; $("runstat").className = "mut"; $("out").textContent = "";
+  try {
+    const r = await call("run-tool", { tool: $("tool").value, input: $("input").value });
+    $("out").textContent = r.text; $("runstat").textContent = ""; $("flow").classList.toggle("hide", $("tool").value !== "video_script"); refresh();
+  } catch (e) { $("runstat").textContent = e.message; $("runstat").className = "err"; }
+  $("run").disabled = false;
+};
+$("copyout").onclick = () => navigator.clipboard.writeText($("out").textContent);
+$("openflow").onclick = () => window.open(FLOW_URL, "_blank", "noopener");
+sb.auth.onAuthStateChange(() => init());
+init();
+</script>
+</body>
+  </html>
