@@ -71,8 +71,7 @@ let poll;
 
 async function call(fn, body) {
   const { data, error } = await sb.functions.invoke(fn, { body });
-  if (error) { let m = "Algo deu errado."; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
-  return data;
+if (error) { let m = "Algo deu errado."; try { const j = await error.context.json(); m = j.error || j.message || JSON.stringify(j); } catch (_) { m = "Erro: " + (error.message || "desconhecido"); } throw new Error(m); }
 }
 async function refresh() {
   const { data: w } = await sb.from("wallets").select("balance").maybeSingle();
